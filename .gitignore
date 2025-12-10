@@ -1,3 +1,11 @@
 build/
 
 *.spec
+
+output
+
+venv*
+
+# caches
+scryfall_cache.json
+deck_cache
