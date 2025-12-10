@@ -1,5 +1,21 @@
 # EDHRec Deck Building Scripts
 
+- [EDHRec Deck Building Scripts](#edhrec-deck-building-scripts)
+  - [Intro](#intro)
+  - [Setup and Example](#setup-and-example)
+  - [Usage - EDHRec Recommendations](#usage---edhrec-recommendations)
+  - [Usage - EDHRec Decklist Statistics](#usage---edhrec-decklist-statistics)
+  - [Outputs](#outputs)
+    - [EDHRec Suggestions](#edhrec-suggestions)
+    - [EDHRec Decklists Statistics](#edhrec-decklists-statistics)
+  - [Cache](#cache)
+    - [Cache directory structure](#cache-directory-structure)
+    - [Deck cache file structure](#deck-cache-file-structure)
+    - [Scryfall data cache structure](#scryfall-data-cache-structure)
+  - [Leaving the Python Venv](#leaving-the-python-venv)
+
+## Intro
+
 These Python programs are aimed at helping deckbuilders follow trends for building their EDH/Commander decks. The scripts get cardlists for a given commander from EDHRec and save them as text files that can be uploaded to sites like Moxfield, Archidekt, MPC Autofill, etc.
 
 ## Setup and Example
