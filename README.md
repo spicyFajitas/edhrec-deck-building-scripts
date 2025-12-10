@@ -5,6 +5,9 @@
   - [Setup and Example](#setup-and-example)
   - [Usage - EDHRec Recommendations](#usage---edhrec-recommendations)
   - [Usage - EDHRec Decklist Statistics](#usage---edhrec-decklist-statistics)
+    - [Entering Arguments During Script Run](#entering-arguments-during-script-run)
+    - [Entering Command Line Arguments](#entering-command-line-arguments)
+    - [Example Using Mixed Arguments](#example-using-mixed-arguments)
   - [Outputs](#outputs)
     - [EDHRec Suggestions](#edhrec-suggestions)
     - [EDHRec Decklists Statistics](#edhrec-decklists-statistics)
@@ -57,23 +60,68 @@ Want to make reduced lists? y/n: n
 
 ## Usage - EDHRec Decklist Statistics
 
-Edit `commander.txt` with your commander you want to search for. The name should be the official card name
+Edit `commander.txt` with your commander you want to search for. The name should be the official card name.
 
 Example: `Mr. Orfeo, the Boulder`
 
+You can either enter the arguments for the script while the script is running, or you can define command line arguments before runnnig the script and the script will automatically use those arguments. You can use any combination of arguments supplied before script runtime and/or arguments supplied from the script prompting.
+
+### Entering Arguments During Script Run
+
 ```shell
 (venv-magic-scripts) user@pc:~$ python3 edhrec_decklists_json_to_txt.py 
-Output directory cleaned: ./output/mr-orfeo-the-boulder/edhrec-decklists-compilation
-Commander is:  Mr. Orfeo, the Boulder
+
+--- Command Line Usage (optional) ---
+python3 script.py --recent 20 --min-price 200 --max-price 450
+Commander name is always read from commander.txt unless overridden.
+
+No CLI arguments detected — falling back to interactive prompts.
+
 How many recent decks to use?: 5
 Minimum deck price?: 1
 Maximum deck price?: 100
+Output directory cleaned: ./output/mr-orfeo-the-boulder/edhrec-decklists
+Commander is:  Mr. Orfeo, the Boulder
 Using 5 deck hashes: ['cJI77Fb1D12YVfic6BSeIA', '0d12VwcQATaT8syoJ5MbyA', 'YBUbiml0nTPUmz4jC1yA6A', 'CU5Byefsf8zIf71IbvbhRg', 'wGxvXBvjVX5c3l6tofV_VQ']
-Downloading decks: 100%|████████████████████████████████████████████████████████| 5/5 [00:00<00:00, 99391.09it/s]
+Downloading decks: 100%|███████████████████████████████████████████████████████████████████████████| 5/5 [00:00<00:00, 97541.95it/s]
+Saved run metadata -> ./output/mr-orfeo-the-boulder/edhrec-decklists/commander.txt
 Decklists saved to output/mr-orfeo-the-boulderdecklists.txt
-Classifying card types: 100%|█████████████████████████████████████████████| 312/312 [00:00<00:00, 1953168.43it/s]
+Classifying card types: 100%|████████████████████████████████████████████████████████████████| 312/312 [00:00<00:00, 1882910.57it/s]
 Master card count and type lists saved in ./output/
 (venv-magic-scripts) user@pc:~$ 
+```
+
+### Entering Command Line Arguments
+
+```shell
+(venv-magic-scripts) user@pc:~$  python3 edhrec_decklists_json_to_txt.py --commander "Mr. Orfeo, the Boulder" --recent 5 --min-price 1 --max-price 100
+Output directory cleaned: ./output/mr-orfeo-the-boulder/edhrec-decklists
+Commander is:  Mr. Orfeo, the Boulder
+Using 5 deck hashes: ['cJI77Fb1D12YVfic6BSeIA', '0d12VwcQATaT8syoJ5MbyA', 'YBUbiml0nTPUmz4jC1yA6A', 'CU5Byefsf8zIf71IbvbhRg', 'wGxvXBvjVX5c3l6tofV_VQ']
+Downloading decks: 100%|███████████████████████████████████████████████████████████████████████████| 5/5 [00:00<00:00, 78545.02it/s]
+Saved run metadata -> ./output/mr-orfeo-the-boulder/edhrec-decklists/commander.txt
+Decklists saved to output/mr-orfeo-the-boulderdecklists.txt
+Classifying card types: 100%|████████████████████████████████████████████████████████████████| 312/312 [00:00<00:00, 1861483.43it/s]
+Master card count and type lists saved in ./output/
+(venv-magic-scripts) user@pc:~$
+```
+
+### Example Using Mixed Arguments
+
+```shell
+(venv-magic-scripts) user@pc:~$ python3 edhrec_decklists_json_to_txt.py --max-price
+ 100
+How many recent decks to use?: 5
+Minimum deck price?: 1
+Output directory cleaned: ./output/mr-orfeo-the-boulder/edhrec-decklists
+Commander is:  Mr. Orfeo, the Boulder
+Using 5 deck hashes: ['cJI77Fb1D12YVfic6BSeIA', '0d12VwcQATaT8syoJ5MbyA', 'YBUbiml0nTPUmz4jC1yA6A', 'CU5Byefsf8zIf71IbvbhRg', 'wGxvXBvjVX5c3l6tofV_VQ']
+Downloading decks: 100%|██████████████████████████████████████████████████████████████████████████| 5/5 [00:00<00:00, 102300.10it/s]
+Saved run metadata -> ./output/mr-orfeo-the-boulder/edhrec-decklists/commander.txt
+Decklists saved to output/mr-orfeo-the-boulderdecklists.txt
+Classifying card types: 100%|████████████████████████████████████████████████████████████████| 312/312 [00:00<00:00, 1582373.46it/s]
+Master card count and type lists saved in ./output/
+(venv-magic-scripts) user@pc:~$
 ```
 
 ## Outputs
@@ -116,6 +164,8 @@ output/
 
 The `edhrec_decklists_json_to_txt.py` script is a bit more involved and aggregates data that EDHRec pulls from different decklist sites. The decks can be filtered down with a budget range and by the most recent X number decks, specified at script runtime. The advantage of this script is data is aggregated into text files instead of having to click through each decklist on the EDHRec website.
 
+The commander.txt file will contain metadata about when the script was ran and what the arguments were at script runtime.
+
 ![EDHRec Commander Decks List](./files/edhrec-commander-decks-list.png)
 
 ![EDHRec Deck by DeckID](./files/edhrec-commander-deck-by-deckid.png)
@@ -132,6 +182,7 @@ output/
     │   ├── cards_land.txt
     │   ├── cards_planeswalker.txt
     │   ├── cards_sorcery.txt
+    │   ├── commander.txt
     │   ├── master_card_counts.txt
     │   └── mr-orfeo-the-boulder-decklists.txt
     └── edhrec-suggestions

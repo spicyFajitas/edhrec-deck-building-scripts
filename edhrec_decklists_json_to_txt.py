@@ -8,6 +8,7 @@ from datetime import datetime
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from tqdm import tqdm
+import argparse
 
 # Global Variables
 EDHREC_BUILD_ID = "pF41RFSK-suPYi-vAeaQ1"
@@ -48,6 +49,9 @@ def clean_output_directories(formatted_name):
     print(f"Output directory cleaned: {output_dir}")
     return output_dir
 
+#################
+# rate limiting #
+##################
 
 def rate_limit_scryfall():
     global LAST_SCRYFALL_REQUEST
@@ -65,6 +69,66 @@ def rate_limit_edhrec():
         time.sleep(EDHREC_MIN_DELAY - elapsed)
     LAST_EDHREC_REQUEST = time.time()
 
+
+####################
+# argument parsing #
+####################
+
+import argparse
+
+def parse_inputs():
+    parser = argparse.ArgumentParser(
+        description="EDHREC deck fetcher (CLI args optional)",
+        add_help=True
+    )
+
+    parser.add_argument("--commander", type=str, help="Override commander name")
+    parser.add_argument("--recent", type=int, help="Number of recent decks to use")
+    parser.add_argument("--min-price", type=float, help="Minimum deck price")
+    parser.add_argument("--max-price", type=float, help="Maximum deck price")
+
+    args = parser.parse_args()
+
+    # Detect whether any CLI arguments were passed
+    if not any(vars(args).values()):
+        print("\n--- Command Line Usage (optional) ---")
+        print("python3 edhrec_decklists_json_to_txt.py --recent 20 --min-price 200 --max-price 450")
+        print("Commander name is always read from commander.txt unless overridden.\n")
+        print("No CLI arguments detected — falling back to interactive prompts.\n")
+
+    # Commander always defaults from file unless overridden
+    if args.commander:
+        commander_name = args.commander
+    else:
+        with open("commander.txt", "r") as f:
+            commander_name = f.read().strip()
+
+    # For each numeric argument, use CLI value if present, otherwise prompt
+    if args.recent is not None:
+        recent = args.recent
+    else:
+        recent = int(input("How many recent decks to use?: "))
+
+    if args.min_price is not None:
+        min_price = args.min_price
+    else:
+        min_price = float(input("Minimum deck price?: "))
+
+    if args.max_price is not None:
+        max_price = args.max_price
+    else:
+        max_price = float(input("Maximum deck price?: "))
+    
+    source_info = {
+    "commander": "CLI" if args.commander else "file",
+    "recent": "CLI" if args.recent is not None else "prompt",
+    "min_price": "CLI" if args.min_price is not None else "prompt",
+    "max_price": "CLI" if args.max_price is not None else "prompt"
+    }
+
+    return commander_name, recent, min_price, max_price, source_info
+
+    
 #################
 # Format Helpers
 #################
@@ -106,12 +170,28 @@ def fetch_deck_table(commander_name: str):
 
     return r.json()
 
+#################
+# deck metadata #
+#################
+
+def save_run_metadata(output_directory, commander_name, max_decks, min_price, max_price, source_info):
+    metadata_path = os.path.join(output_directory, "commander.txt")
+    with open(metadata_path, "w") as f:
+        f.write("Commander Run Metadata\n")
+        f.write("======================\n\n")
+        f.write(f"Timestamp: {datetime.now()}\n")
+        f.write(f"Commander: {commander_name}\n")
+        f.write(f"Max Decks: {max_decks}\n")
+        f.write(f"Min Price: {min_price}\n")
+        f.write(f"Max Price: {max_price}\n")
+        f.write(f"Input Source: {source_info}\n")
+    print(f"Saved run metadata -> {metadata_path}")
 
 ###################################
 # Deck Filtering (price + recency)
 ###################################
 
-def filter_deck_hashes(deck_table: dict, max_decks: int, min_price: float, max_price: float):
+def filter_deck_hashes(deck_table: dict, recent: int, min_price: float, max_price: float):
     entries = deck_table["table"]
 
     for e in entries:
@@ -124,7 +204,7 @@ def filter_deck_hashes(deck_table: dict, max_decks: int, min_price: float, max_p
         if min_price <= e["price"] <= max_price
     ]
 
-    limited = filtered[:max_decks]
+    limited = filtered[:recent]
     return [e["urlhash"] for e in limited]
 
 
@@ -332,9 +412,7 @@ def main():
     root.attributes("-topmost", True)
     root.iconify()
 
-    with open('commander.txt', 'r') as file:
-        commander_name = file.read()
-        file.close()
+    commander_name, recent, min_price, max_price, source_info = parse_inputs()
 
     formatted_name = format_commander_name(commander_name)
 
@@ -346,22 +424,26 @@ def main():
     # 1. Get deck table
     deck_table = fetch_deck_table(formatted_name)
 
-    # 2. Ask filtering options
-    max_decks = int(input("How many recent decks to use?: "))
-    min_price = float(input("Minimum deck price?: "))
-    max_price = float(input("Maximum deck price?: "))
-
-    # 3. Get filtered deck hashes
-    deck_hashes = filter_deck_hashes(deck_table, max_decks, min_price, max_price)
+    # 2. Get filtered deck hashes
+    deck_hashes = filter_deck_hashes(deck_table, recent, min_price, max_price)
     print(f"Using {len(deck_hashes)} deck hashes: {deck_hashes}")
 
-    # 4. Fetch decklists (parallel)
+    # 3. Fetch decklists (parallel)
     all_decks = fetch_decks_parallel(deck_hashes)
 
-    # 5. Save decklists
+    # 4. Save decklists
     output_directory = os.path.join("./output", formatted_name, "edhrec-decklists")
-
     os.makedirs(output_directory, exist_ok=True)
+
+    # 5. Save metadata describing this run
+    save_run_metadata(
+        output_directory,
+        commander_name,
+        recent,
+        min_price,
+        max_price,
+        source_info
+    )
 
     with open(os.path.join(output_directory, formatted_name + "-decklists.txt"), "w") as f:
         for d in all_decks:
