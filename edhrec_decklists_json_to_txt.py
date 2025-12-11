@@ -11,7 +11,7 @@ from tqdm import tqdm
 import argparse
 
 # Global Variables
-EDHREC_BUILD_ID = "pF41RFSK-suPYi-vAeaQ1"
+EDHREC_BUILD_ID = None
 LAST_SCRYFALL_REQUEST = 0
 LAST_EDHREC_REQUEST = 0
 SCRYFALL_MIN_DELAY = 0.12   # Scryfall requires 50–100ms between requests (safe: 120ms)
@@ -142,6 +142,57 @@ def format_commander_name(commander_name:str):
     return formatted_name
 
 
+###########################
+# Build Manifest Fetching #
+###########################
+
+EDHREC_BUILD_ID = None
+
+def fetch_edhrec_build_id():
+    """
+    Fetches the EDHREC build ID by parsing the _buildManifest.js script path.
+    Example script tag:
+       /_next/static/<BUILD_ID>/_buildManifest.js
+    """
+    global EDHREC_BUILD_ID
+
+    if EDHREC_BUILD_ID:
+        return EDHREC_BUILD_ID
+
+    rate_limit_edhrec()
+
+    r = requests.get("https://edhrec.com")
+    if r.status_code != 200:
+        raise Exception("Failed to load EDHREC homepage to detect build ID")
+
+    html = r.text
+
+    # Find the script referencing _buildManifest.js
+    marker = "_buildManifest.js"
+    idx = html.find(marker)
+    if idx == -1:
+        raise Exception("Could not find _buildManifest.js reference in homepage.")
+
+    # Extract the prefix path before the marker
+    prefix = html[:idx]
+
+    # Now locate the build ID between /_next/static/ and the next /
+    static_marker = "/_next/static/"
+    static_idx = prefix.rfind(static_marker)
+    if static_idx == -1:
+        raise Exception("Could not locate /_next/static/ in homepage.")
+
+    start = static_idx + len(static_marker)
+    end = prefix.find("/", start)
+    build_id = prefix[start:end]
+
+    if not build_id or len(build_id) < 5:
+        raise Exception(f"Extracted invalid EDHREC build ID: '{build_id}'")
+
+    EDHREC_BUILD_ID = build_id
+    print(f"[INFO] EDHREC build ID detected: {build_id}")
+    return build_id
+
 ##############################
 # EDHREC Deck Table Functions
 ##############################
@@ -236,11 +287,18 @@ def save_deck_to_cache(deck_id, deck):
 ###############################
 
 def fetch_deck_by_hash(deck_id: str):
+    # Check deck cache first
     cached = load_deck_from_cache(deck_id)
     if cached:
         return cached
 
+    # Load global build ID (fetch once)
+    global EDHREC_BUILD_ID
+    if not EDHREC_BUILD_ID:
+        EDHREC_BUILD_ID = fetch_edhrec_build_id()
+
     rate_limit_edhrec()
+
     url = f"https://edhrec.com/_next/data/{EDHREC_BUILD_ID}/deckpreview/{deck_id}.json?deckId={deck_id}"
     r = requests.get(url)
 
