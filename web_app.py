@@ -130,11 +130,15 @@ if run_button:
     total = len(deck_hashes)
 
     # use backend parallel fetch, but update progress in the UI by counting completed decks
-    fetched = analyzer.fetch_decks_parallel(deck_hashes)
-    for i, d in enumerate(fetched, start=1):
-        all_decks.append(d)
-        progress.progress(i / total)
-        status.info(f"Downloaded {i}/{total} decks")
+    all_decks = []
+
+    for completed, total, deck in analyzer.fetch_decks_with_progress(deck_hashes):
+        if deck:
+            all_decks.append(deck)
+
+        progress.progress(completed / total)
+        status.info(f"Downloaded {completed}/{total} decks")
+
 
     st.session_state.all_decks = all_decks
 

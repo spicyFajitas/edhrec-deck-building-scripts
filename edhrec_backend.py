@@ -219,10 +219,16 @@ class EDHRecAnalyzer:
     # Parallel Deck Downloader (Rate-Aware)
     #########################################
 
-    def fetch_decks_parallel(self, deck_hashes):
-        all_decks = []
+    def fetch_decks_with_progress(self, deck_hashes):
+        """
+        Generator for Streamlit progress bars.
+        Yields (completed, total, deck)
+        """
+        total = len(deck_hashes)
+        completed = 0
+
         if not deck_hashes:
-            return all_decks
+            return
 
         max_workers = min(5, len(deck_hashes))
 
@@ -232,16 +238,50 @@ class EDHRecAnalyzer:
                 for deck_id in deck_hashes
             }
 
-            for future in tqdm(as_completed(futures), total=len(futures), desc="Downloading decks"):
-                deck_id = futures[future]
+            for future in as_completed(futures):
+                deck = None
                 try:
                     deck = future.result()
-                    if deck:
-                        all_decks.append(deck)
                 except Exception as e:
-                    print(f"Error fetching deck {deck_id}: {e}")
+                    print(f"Error fetching deck {futures[future]}: {e}")
 
-        return all_decks
+                completed += 1
+                yield completed, total, deck
+
+    
+    #####################################
+    # fetch decks with progress bars UI #
+    #####################################
+
+    def fetch_decks_with_progress(self, deck_hashes):
+        """
+        Generator that yields (completed, total, deck)
+        Safe for Streamlit progress bars.
+        """
+        total = len(deck_hashes)
+        completed = 0
+
+        if not deck_hashes:
+            return
+
+        max_workers = min(5, len(deck_hashes))
+
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = {
+                executor.submit(self.fetch_deck_by_hash, deck_id): deck_id
+                for deck_id in deck_hashes
+            }
+
+            for future in as_completed(futures):
+                deck = None
+                try:
+                    deck = future.result()
+                except Exception as e:
+                    print(f"Error fetching deck {futures[future]}: {e}")
+
+                completed += 1
+                yield completed, total, deck
+
 
     ####################
     # Scryfall Caching
@@ -469,6 +509,9 @@ def fetch_deck_table(commander_formatted: str):
 
 def filter_deck_hashes(deck_table: dict, recent: int, min_price: float, max_price: float):
     return _analyzer.filter_deck_hashes(deck_table, recent, min_price, max_price)
+
+def fetch_decks_with_progress(deck_hashes):
+    return _analyzer.fetch_decks_with_progress(deck_hashes)
 
 def fetch_decks_parallel(deck_hashes):
     return _analyzer.fetch_decks_parallel(deck_hashes)
