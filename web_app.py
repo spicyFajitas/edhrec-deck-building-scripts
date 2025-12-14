@@ -18,7 +18,7 @@ st.set_page_config(
     page_title="EDHRec Deck Builder Tool",
     layout="centered",
     menu_items={
-        "Get help": "Contact me on Discord - @spicyfajitas",
+        "Get help": "https://github.com/spicyFajitas/edhrec-deck-building-scripts/issues",
         "Report a bug": "https://github.com/spicyFajitas/edhrec-deck-building-scripts/issues",
         "About": (
             "🧙‍♂️ EDHRec Deck Builder Tool\n\n"
