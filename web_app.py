@@ -6,12 +6,9 @@ import streamlit as st
 import pandas as pd
 import altair as alt
 
-from edhrec_backend import (
-    EDHRecAnalyzer,
-)
+from edhrec_backend import EDHRecAnalyzer
 
 analyzer = EDHRecAnalyzer()
-
 
 ###################################
 # Streamlit UI Setup
@@ -20,48 +17,31 @@ analyzer = EDHRecAnalyzer()
 st.set_page_config(page_title="EDHRec Deck Builder Tool", layout="centered")
 st.title("🧙‍♂️ EDHRec Deck Builder Tool")
 st.write("Fetch, analyze, and categorize EDHREC decklists automatically.")
-
-
-st.write("This tool aggregates data from EDHRec for a given commander and shows the commonly used cards in a deck by count of how many decks the card is in.")
-
+st.write(
+    "This tool aggregates data from EDHRec for a given commander and shows the commonly used cards in a deck by count of how many decks the card is in."
+)
 
 ###################################
 # Session State Initialization
 ###################################
 
-if "results_ready" not in st.session_state:
-    st.session_state.results_ready = False
+defaults = {
+    "results_ready": False,
+    "output_dir": None,
+    "formatted_name": None,
+    "commander_name": None,
+    "recent": None,
+    "min_price": None,
+    "max_price": None,
+    "deck_hashes": None,
+    "all_decks": None,
+    "card_counts": None,
+    "type_groups": None,
+    "final_status": None,
+}
 
-if "output_dir" not in st.session_state:
-    st.session_state.output_dir = None
-
-if "formatted_name" not in st.session_state:
-    st.session_state.formatted_name = None
-
-if "commander_name" not in st.session_state:
-    st.session_state.commander_name = None
-
-if "recent" not in st.session_state:
-    st.session_state.recent = None
-
-if "min_price" not in st.session_state:
-    st.session_state.min_price = None
-
-if "max_price" not in st.session_state:
-    st.session_state.max_price = None
-
-if "deck_hashes" not in st.session_state:
-    st.session_state.deck_hashes = None
-
-if "all_decks" not in st.session_state:
-    st.session_state.all_decks = None
-
-if "card_counts" not in st.session_state:
-    st.session_state.card_counts = None
-
-if "type_groups" not in st.session_state:
-    st.session_state.type_groups = None
-
+for key, value in defaults.items():
+    st.session_state.setdefault(key, value)
 
 ###################################
 # Inputs
@@ -69,21 +49,23 @@ if "type_groups" not in st.session_state:
 
 st.header("Commander Selection")
 
-default_commander = ""
-if os.path.exists("commander.txt"):
-    with open("commander.txt", "r") as f:
-        default_commander = f.read().strip()
-
-commander_name = st.text_input("Commander Name", value=default_commander)
+commander_name = st.text_input(
+    "Commander Name",
+    # value=default_commander,
+    placeholder="e.g. Atraxa, Praetors' Voice"
+)
 
 st.header("Deck Query Filters")
-recent = st.number_input("How many recent decks to fetch?", min_value=1, max_value=200, value=20)
-min_price = st.number_input("Minimum deck price", min_value=1.0, max_value=10000.0, value=1.0)
-max_price = st.number_input("Maximum deck price", min_value=1.0, max_value=10000.0, value=100.0)
+recent = st.number_input("How many recent decks to fetch?", 5, 200, 20, 5)
+min_price = st.number_input("Minimum deck price", 5, 10000, 5, 5)
+max_price = st.number_input("Maximum deck price", 5, 10000, 100, 5)
 
 run_button = st.button("Fetch & Analyze Decklists")
 
-st.info("Ready when you are — enter your commander and press the button!")
+if not st.session_state.results_ready and not run_button:
+    st.info("Ready when you are — enter your commander and press the button!")
+
+final_status_box = st.empty()
 
 
 ###################################
@@ -97,125 +79,137 @@ if run_button:
         st.warning("Enter a commander name first.")
         st.stop()
 
+    active_step = st.empty()   # ⭐ SINGLE ACTIVE STEP SLOT
+
     formatted_name = analyzer.format_commander_name(commander_name)
 
-    st.session_state.commander_name = commander_name
-    st.session_state.formatted_name = formatted_name
-    st.session_state.recent = int(recent)
-    st.session_state.min_price = float(min_price)
-    st.session_state.max_price = float(max_price)
-
-    st.subheader("Step 1 — Detect EDHREC Build ID")
-    with st.spinner("Detecting build ID…"):
-        try:
-            build_id = analyzer.fetch_edhrec_build_id()
-            st.success(f"Build ID: `{build_id}`")
-        except Exception as e:
-            st.error(str(e))
-            st.stop()
-
-    st.subheader("Step 2 — Fetch Deck Table")
-    with st.spinner("Fetching deck table…"):
-        deck_table = analyzer.fetch_deck_table(formatted_name)
-
-    deck_hashes = analyzer.filter_deck_hashes(deck_table, int(recent), float(min_price), float(max_price))
-    st.session_state.deck_hashes = deck_hashes
-
-    if not deck_hashes:
-        st.warning("No decks found for those filters.")
-        st.stop()
-
-    st.success(f"Found {len(deck_hashes)} decks.")
-
-    st.subheader("Step 3 — Download Decklists")
-    progress = st.progress(0)
-    status = st.empty()
-
-    all_decks = []
-    total = len(deck_hashes)
-
-    # use backend parallel fetch, but update progress in the UI by counting completed decks
-    all_decks = []
-
-    for completed, total, deck in analyzer.fetch_decks_with_progress(deck_hashes):
-        if deck:
-            all_decks.append(deck)
-
-        progress.progress(completed / total)
-        status.info(f"Downloaded {completed}/{total} decks")
-
-
-    st.session_state.all_decks = all_decks
-
-    st.success(f"Downloaded {len(all_decks)} decks.")
-
-    st.subheader("Step 4 — Write Output Files")
-
-    output_dir = analyzer.clean_output_directories(formatted_name)
-    st.session_state.output_dir = output_dir
-
-    metadata_header = analyzer.build_metadata_header(
-        commander_name,
-        int(recent),
-        float(min_price),
-        float(max_price),
-        source_info={"streamlit-ui": True},
+    st.session_state.update(
+        commander_name=commander_name,
+        formatted_name=formatted_name,
+        recent=int(recent),
+        min_price=float(min_price),
+        max_price=float(max_price),
     )
 
-    decklist_path = analyzer.save_decklists(all_decks, output_dir, formatted_name, metadata_header)
-    st.success(f"Saved decklists: `{decklist_path}`")
+    try:
+        # Step 1 — Build ID
+        active_step.info("🔄 Detecting EDHREC build ID…")
+        build_id = analyzer.fetch_edhrec_build_id()
 
-    st.subheader("Step 5 — Count Cards")
-    with st.spinner("Counting cards…"):
+        # Step 2 — Deck Table
+        active_step.info("🔄 Fetching deck table…")
+        deck_table = analyzer.fetch_deck_table(formatted_name)
+
+        deck_hashes = analyzer.filter_deck_hashes(
+            deck_table,
+            int(recent),
+            float(min_price),
+            float(max_price),
+        )
+        st.session_state.deck_hashes = deck_hashes
+
+        if not deck_hashes:
+            active_step.warning("No decks found for those filters.")
+            st.stop()
+
+        # Step 3 — Download Decklists
+        active_step.info("🔄 Downloading decklists…")
+        progress = st.progress(0)
+        status = st.empty()
+
+        all_decks = []
+        for completed, total, deck in analyzer.fetch_decks_with_progress(deck_hashes):
+            if deck:
+                all_decks.append(deck)
+            progress.progress(completed / total)
+            status.info(f"Downloaded {completed}/{total} decks")
+
+        progress.empty()
+        status.empty()
+
+        st.session_state.all_decks = all_decks
+
+        # Step 4 — Write Output Files
+        active_step.info("🔄 Writing output files…")
+
+        output_dir = analyzer.clean_output_directories(formatted_name)
+        st.session_state.output_dir = output_dir
+
+        metadata_header = analyzer.build_metadata_header(
+            commander_name,
+            int(recent),
+            float(min_price),
+            float(max_price),
+            source_info={"streamlit-ui": True},
+        )
+
+        analyzer.save_decklists(all_decks, output_dir, formatted_name, metadata_header)
+
+        # Step 5 — Count Cards
+        active_step.info("🔄 Counting cards…")
         card_counts = analyzer.count_cards(all_decks)
+        st.session_state.card_counts = card_counts
 
-    st.session_state.card_counts = card_counts
-    analyzer.save_master_cardcount(card_counts, output_dir, metadata_header)
-    st.success("Saved master_card_counts.txt")
+        analyzer.save_master_cardcount(card_counts, output_dir, metadata_header)
 
-    st.subheader("Step 6 — Classify Cards by Type")
-    type_progress = st.progress(0)
-    type_status = st.empty()
+        # Step 6 — Classify Cards
+        active_step.info("🔄 Classifying cards by type…")
+        type_progress = st.progress(0)
+        type_status = st.empty()
 
-    # manual progress loop for web UI
-    type_groups = {
-        "Creature": {},
-        "Instant": {},
-        "Sorcery": {},
-        "Artifact": {},
-        "Enchantment": {},
-        "Planeswalker": {},
-        "Battle": {},
-        "Land": {},
-        "Unknown": {}
-    }
+        type_groups = {
+            "Creature": {},
+            "Instant": {},
+            "Sorcery": {},
+            "Artifact": {},
+            "Enchantment": {},
+            "Planeswalker": {},
+            "Battle": {},
+            "Land": {},
+            "Unknown": {},
+        }
 
-    items = list(card_counts.items())
-    total_cards = len(items)
+        items = list(card_counts.items())
+        total_cards = len(items)
 
-    for idx, (card, count) in enumerate(items, start=1):
-        type_line = analyzer.get_card_type(card)
+        for idx, (card, count) in enumerate(items, start=1):
+            type_line = analyzer.get_card_type(card)
+            matched = False
 
-        matched = False
-        for t in type_groups:
-            if t != "Unknown" and t in type_line:
-                type_groups[t][card] = count
-                matched = True
-                break
-        if not matched:
-            type_groups["Unknown"][card] = count
+            for t in type_groups:
+                if t != "Unknown" and t in type_line:
+                    type_groups[t][card] = count
+                    matched = True
+                    break
 
-        if total_cards > 0:
+            if not matched:
+                type_groups["Unknown"][card] = count
+
             type_progress.progress(idx / total_cards)
-        type_status.info(f"Classified {idx}/{total_cards} cards")
+            type_status.info(f"Downloaded {idx}/{total_cards} decks")
+        
+        type_progress.empty()
+        type_status.empty()
+        active_step.empty()
 
-    st.session_state.type_groups = type_groups
+        st.session_state.type_groups = type_groups
+        analyzer.save_cardtypes(type_groups, output_dir, metadata_header)
 
-    analyzer.save_cardtypes(type_groups, output_dir, metadata_header)
-    st.success("Saved card type lists.")
+        # Done
+        st.session_state.final_status = "success"
+        st.session_state.results_ready = True
 
-    st.session_state.results_ready = True
-    st.success("✅ Processing complete!")
+
+    except Exception as e:
+        st.session_state.final_status = "error"
+        final_status_box.error(f"❌ Error: {e}")
+        st.stop()
+
+    
+if st.session_state.final_status == "success":
+    final_status_box.success("✅ Processing complete!")
+elif st.session_state.final_status == "error":
+    final_status_box.error("❌ Processing failed.")
 
 
 ###################################
@@ -231,27 +225,21 @@ if st.session_state.results_ready:
     st.header("Download & Explore Output Files")
 
     output_files = sorted(os.listdir(output_dir))
-    if not output_files:
-        st.warning("No output files found.")
-        st.stop()
+    file_data = {
+        fn: open(os.path.join(output_dir, fn), "rb").read()
+        for fn in output_files
+    }
 
-    file_data = {}
-    for filename in output_files:
-        path = os.path.join(output_dir, filename)
-        with open(path, "rb") as f:
-            file_data[filename] = f.read()
-
-    st.subheader("Download ALL Output Files (ZIP)")
     zip_buffer = io.BytesIO()
     with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zipf:
-        for filename, data in file_data.items():
-            zipf.writestr(filename, data)
+        for fn, data in file_data.items():
+            zipf.writestr(fn, data)
 
     st.download_button(
-        label="📦 Download All as ZIP",
-        data=zip_buffer.getvalue(),
-        file_name=f"{formatted_name}_edhrec_output.zip",
-        mime="application/zip"
+        "📦 Download All as ZIP",
+        zip_buffer.getvalue(),
+        f"{formatted_name}_edhrec_output.zip",
+        "application/zip",
     )
 
     # Multi-select file downloader
@@ -280,7 +268,7 @@ if st.session_state.results_ready:
             st.warning("Cannot display this file as text.")
 
     # Dashboard Visualization
-    st.header("Card Analysis Dashboard")
+    st.subheader("Card Analysis Dashboard")
 
     card_df = pd.DataFrame(
         [(card, count) for card, count in card_counts.items()],
@@ -313,7 +301,4 @@ if st.session_state.results_ready:
         )
     )
 
-
     st.altair_chart(chart, use_container_width=True)
-
-    st.success("Dashboard and download tools ready!")
