@@ -33,6 +33,49 @@ st.write(
     "This tool aggregates data from EDHRec for a given commander and shows the commonly used cards in a deck by count of how many decks the card is in."
 )
 
+# ✅ NEW: tiny CSS for hover previews (optional but nice)
+st.markdown("""
+<style>
+.card-hover {
+    position: relative;
+    display: block;
+    width: max-content;
+    margin: 6px 0;
+    padding: 2px 0;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+/* Preview container */
+.card-hover img {
+    display: none;
+    position: absolute;
+    left: 110%;
+    top: 0;
+
+    width: 280px;
+    aspect-ratio: 5 / 7;
+    object-fit: contain;
+
+    transform: translateY(-60%) scale(2.8);
+    transform-origin: top left;
+
+    z-index: 1000;
+    border-radius: 12px;
+    box-shadow: 0 14px 32px rgba(0,0,0,0.65);
+    background: #111;
+}
+
+
+/* Show on hover */
+.card-hover:hover img {
+    display: block;
+}
+</style>
+""", unsafe_allow_html=True)
+
+
+
 ###################################
 # Session State Initialization
 ###################################
@@ -108,9 +151,30 @@ if run_button:
         active_step.info("🔄 Detecting EDHREC build ID…")
         build_id = analyzer.fetch_edhrec_build_id()
 
+        if not formatted_name or "-" not in formatted_name:
+            st.warning(
+                "Commander name looks incomplete.\n\n"
+                "Use the full card name, e.g. *Atraxa, Praetors' Voice*"
+            )
+
+
         # Step 2 — Deck Table
         active_step.info("🔄 Fetching deck table…")
-        deck_table = analyzer.fetch_deck_table(formatted_name)
+
+        try:
+            deck_table = analyzer.fetch_deck_table(formatted_name)
+        except Exception:
+            active_step.empty()
+            st.error(
+                f"❌ Commander **{commander_name}** was not found on EDHREC.\n\n"
+                "Please check:\n"
+                "- spelling\n"
+                "- punctuation\n"
+                "- full card name (no nicknames)\n\n"
+                "Example: *Atraxa, Praetors' Voice*"
+            )
+            st.stop()
+
 
         deck_hashes = analyzer.filter_deck_hashes(
             deck_table,
@@ -121,8 +185,16 @@ if run_button:
         st.session_state.deck_hashes = deck_hashes
 
         if not deck_hashes:
-            active_step.warning("No decks found for those filters.")
+            active_step.empty()
+            st.warning(
+                f"⚠️ **{commander_name}** was found, but no decks matched your filters.\n\n"
+                "Try:\n"
+                "- increasing the number of recent decks\n"
+                "- widening the price range\n"
+                "- removing the minimum price filter"
+            )
             st.stop()
+
 
         # Step 3 — Download Decklists
         active_step.info("🔄 Downloading decklists…")
@@ -199,7 +271,7 @@ if run_button:
 
             type_progress.progress(idx / total_cards)
             type_status.info(f"Classified {idx}/{total_cards} cards")
-        
+
         type_progress.empty()
         type_status.empty()
         active_step.empty()
@@ -217,7 +289,7 @@ if run_button:
         final_status_box.error(f"❌ Error: {e}")
         st.stop()
 
-    
+
 if st.session_state.final_status == "success":
     final_status_box.success("✅ Processing complete!")
 elif st.session_state.final_status == "error":
@@ -225,7 +297,7 @@ elif st.session_state.final_status == "error":
 
 
 ###################################
-# Results
+# Results (Tabbed UX)
 ###################################
 
 if st.session_state.results_ready:
@@ -234,95 +306,180 @@ if st.session_state.results_ready:
     card_counts = st.session_state.card_counts
     type_groups = st.session_state.type_groups
 
-    st.header("Download & Explore Output Files")
+    # -------------------------------
+    # Prepare files once
+    # -------------------------------
+    output_files = sorted(
+        fn for fn in os.listdir(output_dir)
+        if os.path.isfile(os.path.join(output_dir, fn))
+    )
 
-    output_files = sorted(os.listdir(output_dir))
     file_data = {
         fn: open(os.path.join(output_dir, fn), "rb").read()
         for fn in output_files
     }
 
-    zip_buffer = io.BytesIO()
-    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zipf:
-        for fn, data in file_data.items():
-            zipf.writestr(fn, data)
+    # -------------------------------
+    # Tabs
+    # -------------------------------
+    active_tab = st.radio(
+    "View",
+    ["📊 Dashboard", "🖼️ Cards", "📄 Files", "📦 Download"],
+    horizontal=True,
+    key="active_tab"
+)
 
-    st.download_button(
-        "📦 Download All as ZIP",
-        zip_buffer.getvalue(),
-        f"{formatted_name}_edhrec_output.zip",
-        "application/zip",
-    )
 
-    # Multi-select file downloader
-    st.subheader("Select files to download")
+    # ============================================================
+    # DASHBOARD TAB
+    # ============================================================
+    if active_tab == "📊 Dashboard":
+        st.subheader("Card Analysis Dashboard")
 
-    selected_files = st.multiselect(
-        "Choose one or more output files",
-        options=output_files,
-        default=[],
-    )
+        BASIC_LANDS = {
+            "Plains", "Island", "Swamp", "Mountain", "Forest"
+        }
 
-    for filename in selected_files:
+        card_df = pd.DataFrame(
+            [
+                (card, count)
+                for card, count in card_counts.items()
+                if card not in BASIC_LANDS
+            ],
+            columns=["Card", "Count"]
+        ).sort_values("Count", ascending=False)
+
+        top_n = st.slider(
+            "Show top N cards",
+            min_value=5,
+            max_value=100,
+            value=20,
+            key="dashboard_top_n"
+        )
+
+        rows = len(card_df.head(top_n))
+        dynamic_height = min(max(rows * 24, 200), 1200)
+
+        chart = (
+            alt.Chart(card_df.head(top_n))
+            .mark_bar()
+            .encode(
+                x=alt.X("Count:Q", title="Frequency Across Decks"),
+                y=alt.Y("Card:N", sort="-x", title="Card Name"),
+                tooltip=["Card", "Count"]
+            )
+            .properties(height=dynamic_height)
+        )
+
+        st.altair_chart(chart, use_container_width=True)
+
+    # ============================================================
+    # CARDS TAB
+    # ============================================================
+    if active_tab == "🖼️ Cards":
+        st.subheader("Visual Card Browser")
+
+        preview_file = st.selectbox(
+            "Select a card list to visualize",
+            options=["(none)"] + output_files,
+            key="cards_preview_file"
+        )
+
+        show_images = st.checkbox("Show card images", value=True)
+        max_cards = st.slider(
+            "Max cards to render",
+            min_value=10,
+            max_value=120,
+            value=40,
+            step=10
+        )
+
+        def cards_for_file(filename):
+            if filename == "master_card_counts.txt":
+                return card_counts
+            if filename.startswith("cards_") and filename.endswith(".txt"):
+                type_name = filename.replace("cards_", "").replace(".txt", "").capitalize()
+                return type_groups.get(type_name, {})
+            return None
+
+        selected_cards = cards_for_file(preview_file)
+
+        if show_images and selected_cards:
+            sorted_cards = sorted(
+                selected_cards.items(),
+                key=lambda x: x[1],
+                reverse=True
+            )[:max_cards]
+
+            for card, count in sorted_cards:
+                meta = analyzer.get_card_metadata(card)
+                img = meta.get("image_url")
+                url = meta.get("scryfall_uri") or "#"
+
+                if img:
+                    st.markdown(
+                        f"""
+                        <div class="card-hover">
+                            <b>{count}×</b> <a href="{url}" target="_blank">{card}</a>
+                            <img src="{img}" />
+                        </div>
+                        """,
+                        unsafe_allow_html=True
+                    )
+                else:
+                    st.markdown(f"**{count}×** [{card}]({url})")
+
+        elif preview_file != "(none)":
+            st.info("Select a master list or card type file to display images.")
+
+    # ============================================================
+    # FILES TAB
+    # ============================================================
+    if active_tab == "📄 Files":
+        st.subheader("Raw Output Files")
+
+        preview_file = st.selectbox(
+            "Choose a file to preview",
+            options=["(none)"] + output_files,
+            key="files_preview_file"
+        )
+
+        if preview_file != "(none)":
+            try:
+                st.code(file_data[preview_file].decode("utf-8"), language="text")
+            except Exception:
+                st.warning("Cannot display this file as text.")
+
+        st.subheader("Download individual files")
+
+        selected_files = st.multiselect(
+            "Select files",
+            options=output_files,
+            default=[]
+        )
+
+        for filename in selected_files:
+            st.download_button(
+                label=f"⬇ Download {filename}",
+                data=file_data[filename],
+                file_name=filename,
+                mime="text/plain"
+            )
+
+    # ============================================================
+    # DOWNLOAD TAB
+    # ============================================================
+    if active_tab == "📦 Download":
+        st.subheader("Download All Outputs")
+
+        zip_buffer = io.BytesIO()
+        with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zipf:
+            for fn, data in file_data.items():
+                zipf.writestr(fn, data)
+
         st.download_button(
-            label=f"⬇ Download {filename}",
-            data=file_data[filename],
-            file_name=filename,
-            mime="text/plain"
+            "📦 Download All as ZIP",
+            zip_buffer.getvalue(),
+            f"{formatted_name}_edhrec_output.zip",
+            "application/zip",
         )
-
-    st.subheader("Preview File Contents")
-    preview_file = st.selectbox("Choose a file to preview:", options=["(none)"] + output_files, index=0)
-    if preview_file != "(none)":
-        try:
-            st.code(file_data[preview_file].decode("utf-8"), language="text")
-        except Exception:
-            st.warning("Cannot display this file as text.")
-
-    # Dashboard Visualization
-    st.subheader("Card Analysis Dashboard")
-
-    BASIC_LANDS = {
-        "Plains",
-        "Island",
-        "Swamp",
-        "Mountain",
-        "Forest"
-    }
-
-    card_df = pd.DataFrame(
-    [
-        (card, count)
-        for card, count in card_counts.items()
-        if card not in BASIC_LANDS
-    ],
-    columns=["Card", "Count"]
-    ).sort_values("Count", ascending=False)
-
-    top_n = st.slider("Show top N cards", min_value=5, max_value=100, value=20)
-
-    rows = len(card_df.head(top_n))
-    row_height = 24          # pixels per card (20–30 is a good range)
-    min_height = 200
-    max_height = 1200
-
-    dynamic_height = min(
-        max(rows * row_height, min_height),
-        max_height
-    )
-
-    chart = (
-        alt.Chart(card_df.head(top_n))
-        .mark_bar()
-        .encode(
-            x=alt.X("Count:Q", title="Frequency Across Decks"),
-            y=alt.Y("Card:N", sort="-x", title="Card Name"),
-            tooltip=["Card", "Count"]
-        )
-        .properties(
-            width=700,
-            height=dynamic_height
-        )
-    )
-
-    st.altair_chart(chart, use_container_width=True)
