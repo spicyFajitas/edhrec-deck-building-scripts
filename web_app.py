@@ -57,7 +57,7 @@ st.markdown("""
     aspect-ratio: 5 / 7;
     object-fit: contain;
 
-    transform: translateY(-60%) scale(2.8);
+    transform: translateY(-60%) scale(1.3);
     transform-origin: top left;
 
     z-index: 1000;
