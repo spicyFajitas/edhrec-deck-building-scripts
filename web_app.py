@@ -306,6 +306,31 @@ if st.session_state.results_ready:
     card_counts = st.session_state.card_counts
     type_groups = st.session_state.type_groups
 
+    BASIC_LANDS = {
+        "Plains", "Island", "Swamp", "Mountain", "Forest"
+    }
+
+    filtered_card_counts = {
+    card: count
+    for card, count in card_counts.items()
+    if card not in BASIC_LANDS
+    }
+
+    filtered_type_groups = {
+        type_name: {
+            card: count
+            for card, count in cards.items()
+            if card not in BASIC_LANDS
+        }
+        for type_name, cards in type_groups.items()
+    }
+
+    show_basics = st.checkbox("Include basic lands", value=False)
+
+    active_card_counts = card_counts if show_basics else filtered_card_counts
+    active_type_groups = type_groups if show_basics else filtered_type_groups
+
+
     # -------------------------------
     # Prepare files once
     # -------------------------------
@@ -327,8 +352,7 @@ if st.session_state.results_ready:
     ["📊 Dashboard", "🖼️ Cards", "📄 Files", "📦 Download"],
     horizontal=True,
     key="active_tab"
-)
-
+    )
 
     # ============================================================
     # DASHBOARD TAB
@@ -336,16 +360,8 @@ if st.session_state.results_ready:
     if active_tab == "📊 Dashboard":
         st.subheader("Card Analysis Dashboard")
 
-        BASIC_LANDS = {
-            "Plains", "Island", "Swamp", "Mountain", "Forest"
-        }
-
         card_df = pd.DataFrame(
-            [
-                (card, count)
-                for card, count in card_counts.items()
-                if card not in BASIC_LANDS
-            ],
+            active_card_counts.items(),
             columns=["Card", "Count"]
         ).sort_values("Count", ascending=False)
 
@@ -405,11 +421,12 @@ if st.session_state.results_ready:
 
         def cards_for_file(filename):
             if filename == "master_card_counts.txt":
-                return card_counts
+                return active_card_counts
             if filename.startswith("cards_") and filename.endswith(".txt"):
                 type_name = filename.replace("cards_", "").replace(".txt", "").capitalize()
-                return type_groups.get(type_name, {})
+                return active_type_groups.get(type_name, {})
             return None
+
 
         selected_cards = cards_for_file(preview_file)
 
